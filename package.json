@@ -1,0 +1,14 @@
+{
+  "name": "invest-monopoly-online",
+  "version": "3.1.0",
+  "private": true,
+  "description": "Invest MonoPoly educational game with causal macro market simulation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

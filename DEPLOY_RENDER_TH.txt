@@ -1,0 +1,72 @@
+คู่มือเผยแพร่ Invest MonoPoly V3.1 เป็นเว็บไซต์ออนไลน์ (Render)
+============================================================
+
+สิ่งที่ต้องมี
+- บัญชี GitHub
+- บัญชี Render
+- ไฟล์โปรเจกต์ Invest MonoPoly V3.1 ที่แตก ZIP แล้ว
+
+ภาพรวม
+อัปโหลดโปรเจกต์ขึ้น GitHub แล้วเชื่อม GitHub กับ Render เพื่อสร้าง Web Service แบบ Node.js
+Render จะกำหนด URL ฟรีรูปแบบ https://ชื่อบริการ.onrender.com ให้เมื่อ deploy สำเร็จ
+
+ขั้นตอนที่ 1: อัปโหลดโปรเจกต์ขึ้น GitHub
+1. เข้า https://github.com แล้วเข้าสู่ระบบ
+2. กด New repository
+3. ตั้งชื่อ เช่น invest-monopoly-game
+4. เลือก Public (หรือ Private ก็ได้หากบัญชี Render เชื่อมและเข้าถึง repo นั้นได้)
+5. กด Create repository
+6. ใช้ GitHub Desktop หรือหน้าเว็บ GitHub อัปโหลดไฟล์และโฟลเดอร์ทั้งหมดจากโปรเจกต์นี้
+   - ให้อัปโหลดไฟล์ package.json, server.js, render.yaml, README_TH.txt,
+     DEPLOY_RENDER_TH.txt และโฟลเดอร์ public รวมถึงไฟล์ภาพเกมที่ server ใช้อ้างอิง
+   - อย่าอัปโหลด node_modules
+   - ตรวจให้ package.json อยู่ที่ระดับบนสุดของ repository ไม่ใช่อยู่ในโฟลเดอร์ซ้อนอีกชั้น
+
+ทางเลือกด้วย Git (หากติดตั้ง Git แล้ว)
+เปิด Terminal ในโฟลเดอร์โปรเจกต์ แล้วรันคำสั่ง โดยแทน URL ด้วย URL repository ของตนเอง:
+  git init
+  git add .
+  git commit -m "Prepare Invest MonoPoly for online deployment"
+  git branch -M main
+  git remote add origin https://github.com/ชื่อผู้ใช้/invest-monopoly-game.git
+  git push -u origin main
+
+ขั้นตอนที่ 2: สร้างเว็บไซต์บน Render
+1. เข้า https://render.com และสมัคร/เข้าสู่ระบบ
+2. เลือก New + แล้วเลือก Web Service
+3. เชื่อมต่อ GitHub และเลือก repository invest-monopoly-game
+4. ตั้งค่า:
+   - Name: invest-monopoly-game (หากชื่อนี้ถูกใช้แล้ว ให้เติมเลขหรือคำอื่น)
+   - Runtime/Language: Node
+   - Branch: main
+   - Root Directory: เว้นว่าง หาก package.json อยู่ระดับบนสุด
+   - Build Command: npm install
+   - Start Command: npm start
+   - Instance Type: Free (สำหรับทดลองใช้)
+5. กด Create Web Service
+6. รอจนสถานะ deploy สำเร็จ แล้วเปิด URL ที่ Render แสดงให้
+7. ทดสอบ URL หลัก, /health และ /classroom.html
+
+ขั้นตอนที่ 3: ทดลองใช้งาน
+- เปิด URL หลักในเบราว์เซอร์เพื่อใช้โหมดแข่งขันออนไลน์
+- เปิด /classroom.html เพื่อใช้โหมดครูควบคุมจากคอมพิวเตอร์เครื่องเดียว
+- สร้างห้องและเข้าจากเบราว์เซอร์อีกเครื่องด้วยรหัสห้อง
+- ทดสอบการซื้อ/ขาย การจบรอบ และการรีเฟรชหน้าเว็บก่อนใช้กับนักเรียนจริง
+
+ข้อจำกัดสำคัญของแผนฟรี
+- เว็บอาจพักการทำงานเมื่อไม่มีการใช้งานประมาณ 15 นาที และอาจใช้เวลาราวหนึ่งนาทีในการตื่นกลับ
+- ห้องเกมออนไลน์ถูกเก็บไว้ในหน่วยความจำเซิร์ฟเวอร์ การรีสตาร์ตหรือ deploy ใหม่ทำให้ห้องและสถานะเกมหาย
+- ยังไม่มีฐานข้อมูลถาวร บัญชีผู้ใช้ หรือระบบครูยืนยันตัวตน
+- URL สาธารณะหมายถึงใครก็เปิดเว็บไซต์ได้ แต่ผู้เล่นยังต้องมีรหัสห้องจึงเข้าร่วมห้องได้
+- ห้ามใช้ข้อมูลส่วนบุคคลที่อ่อนไหวของนักเรียนในชื่อผู้เล่น
+- ก่อนจัดการแข่งขันจริง ควรทดสอบกับกลุ่มเล็กก่อน และพิจารณาโฮสต์แบบเสียเงิน/ฐานข้อมูลถาวรหากต้องเก็บผลและความต่อเนื่อง
+
+แก้ไขและเผยแพร่เวอร์ชันใหม่
+หากเปิด Auto Deploy ไว้ การ push commit ใหม่ไปยัง branch main จะสั่งให้ Render deploy เวอร์ชันใหม่โดยอัตโนมัติ
+
+หาก deploy ไม่ผ่าน
+1. เปิดหน้า Events/Logs ของบริการใน Render
+2. ตรวจว่า package.json อยู่ใน Root Directory ที่ตั้งไว้
+3. ตรวจว่า Build Command เป็น npm install และ Start Command เป็น npm start
+4. ตรวจ log ว่าติดตั้ง express และ ws สำเร็จหรือไม่
+5. เปิด /health หลัง deploy ควรได้ JSON ที่มี ok: true
