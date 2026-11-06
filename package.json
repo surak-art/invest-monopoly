@@ -1,8 +1,8 @@
 {
   "name": "invest-monopoly-online",
-  "version": "4.4.0",
+  "version": "4.6.1",
   "private": true,
-  "description": "Invest MonoPoly Hybrid Classroom v4.4: age-based investment simulation, asset event impacts, skill-card income and reward popups",
+  "description": "Invest MonoPoly v4.6.1: automatic 8-bit background music and action/event sound effects",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
