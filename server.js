@@ -61,6 +61,34 @@ function refreshMarket(room,ev){
 }
 function marketValue(p,room){return p.assets.reduce((s,a)=>s+(room.market[a.id]?.price??a.lastPrice??a.cost),0)}
 function total(p,room){return p.cash+marketValue(p,room)}
+// Educational fixed-income assumptions: 6 rounds = 1 simulated year.
+const FIXED_INCOME={bond:{coupon:0.025,earlyCost:0.005,label:'พันธบัตรรัฐบาล'},corp:{coupon:0.04,earlyCost:0.015,label:'หุ้นกู้เอกชน'},fixed:{coupon:0.015,label:'เงินฝากประจำ'}};
+function assetSaleQuote(a,room,round,roundsTotal=6){
+ const market=room.market[a.id]?.price??a.lastPrice??a.cost;
+ if(a.id==='fixed')return {allowed:false,price:0,fee:0,interest:0,reason:'เงินฝากประจำต้องฝากครบกำหนด จึงขายได้เมื่อจบเกมเท่านั้น'};
+ if(a.id==='bond'||a.id==='corp'){
+  const terms=FIXED_INCOME[a.id];
+  const fee=Math.round(market*terms.earlyCost),price=Math.max(0,market-fee);
+  return {allowed:true,price,fee,interest:0,proceeds:price,reason:`หักต้นทุนขายก่อนกำหนด ${(terms.earlyCost*100).toFixed(1)}% ของราคาตลาด`};
+ }
+ return {allowed:true,price:market,fee:0,interest:0,proceeds:market,reason:''};
+}
+function applyFixedIncomeRound(group,round){
+ let bondInterest=0,corpInterest=0,savingsInterest=0,fixedAccrued=0;
+ for(const a of group.assets){const held=Math.max(0,round-(a.buyRound||round)+1);
+  if(a.id==='bond'){const v=Math.round(a.cost*FIXED_INCOME.bond.coupon/6);group.cash+=v;bondInterest+=v;a.interestPaid=(a.interestPaid||0)+v;}
+  if(a.id==='corp'){const v=Math.round(a.cost*FIXED_INCOME.corp.coupon/6);group.cash+=v;corpInterest+=v;a.interestPaid=(a.interestPaid||0)+v;}
+  if(a.id==='savings'){const v=Math.round(a.cost*.01/6);group.cash+=v;savingsInterest+=v;}
+  if(a.id==='fixed'){fixedAccrued+=Math.round(a.cost*FIXED_INCOME.fixed.coupon/6);a.accruedInterest=(a.accruedInterest||0)+Math.round(a.cost*FIXED_INCOME.fixed.coupon/6);}
+ }
+ return {bondInterest,corpInterest,savingsInterest,fixedAccrued};
+}
+function matureFixedDeposits(group){let paid=0;for(const a of group.assets){if(a.id==='fixed'){const interest=a.accruedInterest||Math.round(a.cost*FIXED_INCOME.fixed.coupon);group.cash+=interest;paid+=interest;a.matured=true;}}return paid;}
+function roundPerformance(group,room,round,before,interest={}){
+ const after=total(group,room),profit=after-before;
+ group.lastRoundResult={round,before,after,profit,returnPct:before?profit/before*100:0,interest};
+ return group.lastRoundResult;
+}
 function snapshot(room){return {...room,players:room.players.map(p=>({...p,ws:undefined,marketValue:marketValue(p,room),netWorth:total(p,room)})),economy:room.economy}}
 function broadcast(room){const snap=snapshot(room);for(const c of wss.clients)if(c.readyState===1&&c.room===room.code)send(c,'state',snap)}
 function applyYield(room){for(const p of room.players){for(const a of p.assets){if(a.id==='tutor')p.cash+=2;if(a.id==='savings')p.cash+=Math.max(0,Math.round(a.cost*.002));if(a.id==='fixed')p.cash+=Math.max(0,Math.round(a.cost*.0035));}}}
@@ -81,9 +109,9 @@ function nextTurn(room){if(room.players.every(p=>p.done)){
 const classroomRooms=new Map();
 function classSnapshot(r){
  return {code:r.code,started:r.started,finished:r.finished,created:r.created,durationMinutes:r.durationMinutes,requests:r.requests||[],
-  endsAt:r.endsAt,round:r.round,roundsTotal:r.roundsTotal,market:r.market,cards:CARDS,economy:r.economy,event:r.event,
+  endsAt:r.endsAt,round:r.round,roundsTotal:r.roundsTotal,market:r.market,cards:CARDS,economy:r.economy,event:r.event,fixedIncomeTerms:{bond:2.5,corp:4.0,fixed:1.5,earlyBondFee:0.5,earlyCorpFee:1.5,roundsPerYear:6},
   winner:r.finished?[...r.groups].sort((a,b)=>total(b,r)-total(a,r))[0]?.name||null:null, winnerScore:r.finished?Math.max(0,...r.groups.map(g=>total(g,r))):null, groups:r.groups.map(g=>({id:g.id,name:g.name,avatar:g.avatar||'🧑‍🎓',managedByTeacher:!!g.managedByTeacher,online:!!g.online,age:g.age||null,ageLabel:g.ageLabel||null,initialCapital:g.initialCapital||0,maxRounds:g.maxRounds||0,cash:g.cash,assets:g.assets,
-   insured:g.insured,marketValue:marketValue(g,r),netWorth:total(g,r),buys:g.buys||0,sells:g.sells||0,actions:g.actions||0,skillCount:g.assets.filter(a=>a.id==='tutor').length,lastRoundIncome:g.lastRoundIncome||null,
+   insured:g.insured,marketValue:marketValue(g,r),netWorth:total(g,r),buys:g.buys||0,sells:g.sells||0,actions:g.actions||0,skillCount:g.assets.filter(a=>a.id==='tutor').length,lastRoundIncome:g.lastRoundIncome||null,lastRoundResult:g.lastRoundResult||null,
    invested:g.assets.reduce((s,a)=>s+a.cost,0),assetTypes:new Set(g.assets.map(a=>a.id)).size,diversification:(new Set(g.assets.map(a=>a.id)).size>=3?'กระจายหลายประเภท':new Set(g.assets.map(a=>a.id)).size===2?'กระจาย 2 ประเภท':'กระจายน้อย/ยังไม่มีสินทรัพย์')})),history:r.history,log:r.log.slice(0,60)};
 }
 function classBroadcast(r){
@@ -94,18 +122,20 @@ function classLog(r,msg){r.log.unshift({at:Date.now(),msg});r.log=r.log.slice(0,
 function classFinish(r,reason){
  if(r.finished)return;
  r.finished=true;r.finishedAt=Date.now();r.finishReason=reason||'ครูจบกิจกรรม';
+ for(const g of r.groups){g.finalFixedInterest=matureFixedDeposits(g);if(g.roundStartValue!=null)roundPerformance(g,r,g.lastRoundResult?.round||r.round,g.roundStartValue,{...(g.lastRoundIncome||{}),fixedMaturity:g.finalFixedInterest});}
  r.history.push({round:r.round,at:Date.now(),economy:r.economy.name,winner:r.finished?[...r.groups].sort((a,b)=>total(b,r)-total(a,r))[0]?.name||null:null, winnerScore:r.finished?Math.max(0,...r.groups.map(g=>total(g,r))):null, groups:r.groups.map(g=>({id:g.id,name:g.name,age:g.age,ageLabel:g.ageLabel,initialCapital:g.initialCapital,maxRounds:g.maxRounds,cash:g.cash,marketValue:marketValue(g,r),netWorth:total(g,r),assets:g.assets.map(a=>({...a}))}))});
  classLog(r,'จบกิจกรรม: '+r.finishReason);classBroadcast(r);
 }
 function classApplyRoundIncome(r){
  for(const g of r.groups){
-  g.lastRoundIncome={round:r.round,skillIncome:0,savingsIncome:0,fixedIncome:0,total:0};
+  const before=total(g,r);g.roundStartValue=before;
   const skills=g.assets.filter(a=>a.id==='tutor').length;
   const skillIncome=skills*2;
-  const savingsIncome=g.assets.filter(a=>a.id==='savings').reduce((n,a)=>n+Math.max(0,Math.round(a.cost*.002)),0);
-  const fixedIncome=g.assets.filter(a=>a.id==='fixed').reduce((n,a)=>n+Math.max(0,Math.round(a.cost*.0035)),0);
-  const income=skillIncome+savingsIncome+fixedIncome;
-  if(income>0){g.cash+=income;g.lastRoundIncome={round:r.round,skillIncome,savingsIncome,fixedIncome,total:income};}
+  const interest=applyFixedIncomeRound(g,r.round);
+  const income=skillIncome+interest.bondInterest+interest.corpInterest+interest.savingsInterest;
+  if(income>0)g.cash+=skillIncome;
+  g.lastRoundIncome={round:r.round,skillIncome,...interest,total:income};
+  roundPerformance(g,r,r.round,before,g.lastRoundIncome);
  }
 }
 function classHistory(r){
@@ -180,7 +210,7 @@ function handleClassroom(ws,m,d){
   r.round++;
   const ev=ECON[Math.floor(Math.random()*ECON.length)];r.economy=ev;r.event=ev.name+': '+ev.desc;
   if(r.round===3){r.groups.forEach(g=>g.cash+=10);r.event='มาตรการกระตุ้นเศรษฐกิจ: ทุกกลุ่มได้รับเงินเพิ่ม 10 เหรียญ';r.economy={...ECON[0],name:'มาตรการกระตุ้นเศรษฐกิจ',desc:'เงินกระตุ้นเพิ่มอุปสงค์ ช่วยหนุนหุ้นและที่ดิน'};}
-  refreshMarket(r,r.economy);classHistory(r);classLog(r,'ครูเปลี่ยนเป็นรอบ '+r.round+' — '+r.event);classBroadcast(r);return true;
+  refreshMarket(r,r.economy);for(const g of r.groups){const before=g.roundStartValue??total(g,r);roundPerformance(g,r,r.round-1,before,g.lastRoundIncome||{});}classHistory(r);classLog(r,'ครูเปลี่ยนเป็นรอบ '+r.round+' — '+r.event);classBroadcast(r);return true;
  }
  if(m.type==='class_finish'){
   if(ws.classRole!=='teacher'||ws.teacherToken!==r.teacherToken)return send(ws,'error','เฉพาะครูผู้ควบคุมเท่านั้น');
@@ -212,7 +242,7 @@ function handleClassroom(ws,m,d){
    g.cash-=price;g.assets.push({id:c.id,name:c.name,cost:price,buyRound:r.round,lastPrice:price});g.buys++;g.actions++;classLog(r,'ครูดำเนินคำสั่งซื้อให้ '+g.name+' ซื้อ '+c.name+' ราคา '+price+' เหรียญ');
   }else if(req.action==='sell'){
    const idx=req.index;if(!Number.isInteger(idx)||idx<0||idx>=g.assets.length)return send(ws,'error','สินทรัพย์ที่ต้องการขายเปลี่ยนแปลงแล้ว');
-   const a=g.assets[idx],price=r.market[a.id]?.price??a.lastPrice??a.cost;g.cash+=price;g.assets.splice(idx,1);g.sells++;g.actions++;classLog(r,'ครูดำเนินคำสั่งขายให้ '+g.name+' ขาย '+a.name+' ได้ '+price+' เหรียญ');
+   const a=g.assets[idx];const quote=assetSaleQuote(a,r,r.round,r.roundsTotal);if(!quote.allowed)return send(ws,'error',quote.reason);const price=quote.price;g.cash+=quote.proceeds;g.assets.splice(idx,1);g.sells++;g.actions++;classLog(r,'ครูดำเนินคำสั่งขายให้ '+g.name+' ขาย '+a.name+' ได้สุทธิ '+quote.proceeds+' เหรียญ (ค่าขาย '+quote.fee+'; ดอกเบี้ย '+quote.interest+')');
   }else{
    if(g.insured||g.cash<10)return send(ws,'error','ไม่สามารถซื้อประกันได้ (มีประกันแล้วหรือเงินไม่พอ)');
    g.cash-=10;g.insured=true;g.actions++;classLog(r,'ครูดำเนินคำสั่งซื้อประกันให้ '+g.name);
@@ -229,7 +259,7 @@ function handleClassroom(ws,m,d){
    g.cash-=price;g.assets.push({id:c.id,name:c.name,cost:price,buyRound:r.round,lastPrice:price});g.buys++;g.actions++;classLog(r,(d.source==='student_instruction'?'ครูบันทึกคำสั่งจากนักเรียนและดำเนินการแทน ':'ครูดำเนินการแทน ')+g.name+' ซื้อ '+c.name+' ราคา '+price+' เหรียญ');
   }else if(d.action==='sell'){
    const idx=Number(d.index);if(!Number.isInteger(idx)||idx<0||idx>=g.assets.length)return send(ws,'error','ไม่พบสินทรัพย์ที่ต้องการขาย');
-   const a=g.assets[idx],price=r.market[a.id]?.price??a.lastPrice??a.cost;g.cash+=price;g.assets.splice(idx,1);g.sells++;g.actions++;classLog(r,(d.source==='student_instruction'?'ครูบันทึกคำสั่งจากนักเรียนและดำเนินการแทน ':'ครูดำเนินการแทน ')+g.name+' ขาย '+a.name+' ได้ '+price+' เหรียญ');
+   const a=g.assets[idx];const quote=assetSaleQuote(a,r,r.round,r.roundsTotal);if(!quote.allowed)return send(ws,'error',quote.reason);const price=quote.price;g.cash+=quote.proceeds;g.assets.splice(idx,1);g.sells++;g.actions++;classLog(r,(d.source==='student_instruction'?'ครูบันทึกคำสั่งจากนักเรียนและดำเนินการแทน ':'ครูดำเนินการแทน ')+g.name+' ขาย '+a.name+' ได้สุทธิ '+quote.proceeds+' เหรียญ (ค่าขาย '+quote.fee+'; ดอกเบี้ย '+quote.interest+')');
   }else if(d.action==='insure'){
    if(g.insured)return send(ws,'error','ตัวละครนี้มีประกันแล้ว');if(g.cash<10)return send(ws,'error','เงินสดไม่เพียงพอ');g.cash-=10;g.insured=true;g.actions++;classLog(r,'ครูซื้อประกันแทน '+g.name+' 10 เหรียญ');
   }else return send(ws,'error','คำสั่งไม่ถูกต้อง');
@@ -247,8 +277,8 @@ function handleClassroom(ws,m,d){
    classLog(r,g.name+' ซื้อ '+c.name+' ราคา '+price+' เหรียญ');
   }else if(m.type==='class_sell'){
    const idx=Number(d.index);if(!Number.isInteger(idx)||idx<0||idx>=g.assets.length)return send(ws,'error','ไม่พบสินทรัพย์ที่ต้องการขาย');
-   const a=g.assets[idx],price=r.market[a.id]?.price??a.lastPrice??a.cost;g.cash+=price;g.assets.splice(idx,1);g.sells++;g.actions++;
-   classLog(r,g.name+' ขาย '+a.name+' ได้ '+price+' เหรียญ');
+   const a=g.assets[idx],quote=assetSaleQuote(a,r,r.round,r.roundsTotal);if(!quote.allowed)return send(ws,'error',quote.reason);const price=quote.price;g.cash+=quote.proceeds;g.assets.splice(idx,1);g.sells++;g.actions++;
+   classLog(r,g.name+' ขาย '+a.name+' ได้สุทธิ '+quote.proceeds+' เหรียญ (ค่าขาย '+quote.fee+'; ดอกเบี้ย '+quote.interest+')');
   }else{
    if(g.insured)return send(ws,'error','กลุ่มนี้มีประกันแล้ว');if(g.cash<10)return send(ws,'error','เงินสดไม่เพียงพอ');
    g.cash-=10;g.insured=true;g.actions++;classLog(r,g.name+' ซื้อประกัน 10 เหรียญ');
@@ -267,7 +297,7 @@ wss.on('connection',ws=>{ws.on('message',raw=>{let m;try{m=JSON.parse(raw)}catch
  if(m.type==='start'&&r.players.length>=2&&!r.started){r.started=true;const ages=['วัยสร้างตัว','วัยทำงาน','วัยเกษียณ'];r.players.forEach(x=>{x.age=ages[Math.floor(Math.random()*3)];x.cash=x.age==='วัยสร้างตัว'?40:x.age==='วัยทำงาน'?60:80;x.maxRounds=x.age==='วัยสร้างตัว'?6:x.age==='วัยทำงาน'?5:4});r.turn=0;log(r,'เริ่มเกม: สุ่มช่วงวัยและเงินทุนแล้ว');broadcast(r);return;}
  if(!r.started||r.finished)return;if(r.players[r.turn]!==p)return send(ws,'error','ยังไม่ถึงตาคุณ');
  if(m.type==='buy'){const c=CARDS.find(x=>x.id===d.id);if(!c||c.id==='insurance')return;if(c.id==='tutor'&&p.assets.filter(a=>a.id==='tutor').length>=2)return send(ws,'error','ซื้อการ์ดฝึกทักษะได้ไม่เกิน 2 ใบ');const price=r.market[c.id]?.price??c.price;if(p.cash<price)return send(ws,'error','เงินไม่เพียงพอ');p.cash-=price;p.assets.push({id:c.id,name:c.name,cost:price,buyRound:r.round,lastPrice:price});log(r,`${p.name} ซื้อ${c.name} ราคา ${price} เหรียญ`);broadcast(r);}
- if(m.type==='sell'){const i=p.assets.findIndex(x=>x.id===d.id);if(i<0)return;const a=p.assets[i],price=r.market[a.id]?.price??a.lastPrice;p.cash+=price;p.assets.splice(i,1);log(r,`${p.name} ขาย${a.name} ได้ ${price} เหรียญ (ต้นทุน ${a.cost}; กำไร/ขาดทุน ${price-a.cost})`);broadcast(r);}
+ if(m.type==='sell'){const i=p.assets.findIndex(x=>x.id===d.id);if(i<0)return;const a=p.assets[i],quote=assetSaleQuote(a,r,r.round,6);if(!quote.allowed)return send(ws,'error',quote.reason);p.cash+=quote.proceeds;p.assets.splice(i,1);log(r,`${p.name} ขาย${a.name} ได้สุทธิ ${quote.proceeds} เหรียญ (ค่าขาย ${quote.fee}; ดอกเบี้ย ${quote.interest})`);broadcast(r);}
  if(m.type==='insure'){if(p.insured)return send(ws,'error','มีประกันแล้ว');if(p.cash<10)return send(ws,'error','เงินไม่เพียงพอ');p.cash-=10;p.insured=true;log(r,p.name+' ซื้อประกัน 10 เหรียญ');broadcast(r);}
  if(m.type==='end'){const outcomes=[{n:'อุบัติเหตุทางรถยนต์',cost:2},{n:'ไส้ติ่งอักเสบ ต้องผ่าตัด',cost:3},{n:'ถูกมิจฉาชีพหลอก',cost:5},{n:'โทรศัพท์เสียหาย',cost:3},{n:'บาดเจ็บจากการเล่นกีฬา',cost:2},{n:'อุบัติเหตุระหว่างเดินทาง',cost:1}];const hit=Math.random()<.5;if(hit){const e=outcomes[Math.floor(Math.random()*outcomes.length)];if(p.insured){p.cash+=5;log(r,`วงล้อ: ${p.name} พบเหตุ ${e.n} มีประกันจึงไม่เสียเงินและได้รับ 5 เหรียญ`)}else{p.cash=Math.max(0,p.cash-e.cost);log(r,`วงล้อ: ${p.name} — ${e.n} เสีย ${e.cost} เหรียญ`)}}else log(r,`วงล้อ: ${p.name} ปลอดภัย ไม่มีค่าใช้จ่าย`);p.done=true;nextTurn(r);broadcast(r);}
  });ws.on('close',()=>{if(ws.classRoom){const cr=classroomRooms.get(ws.classRoom);if(cr){if(ws.classRole==='teacher')cr.teacherOnline=false;else if(ws.classRole==='group'){const gg=cr.groups.find(x=>x.id===ws.groupId);if(gg)gg.online=false;}classBroadcast(cr);}}const r=rooms.get(ws.room);if(r){const p=r.players.find(x=>x.ws===ws);if(p){p.online=false;log(r,p.name+' หลุดจากการเชื่อมต่อ');broadcast(r)}}});});
