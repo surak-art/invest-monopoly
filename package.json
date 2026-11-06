@@ -1,8 +1,8 @@
 {
   "name": "invest-monopoly-online",
-  "version": "3.1.0",
+  "version": "4.4.0",
   "private": true,
-  "description": "Invest MonoPoly educational game with causal macro market simulation",
+  "description": "Invest MonoPoly Hybrid Classroom v4.4: age-based investment simulation, asset event impacts, skill-card income and reward popups",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
